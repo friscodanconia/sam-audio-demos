@@ -1,0 +1,120 @@
+Deep Research Blueprints: Meta SAM Audio Projects
+Date: December 16, 2025 Core Tech: Meta SAM Audio (Segment Anything Model for Audio)
+
+Overview
+This document outlines three advanced project architectures using Meta's newly released SAM Audio. These projects focus on "Consumption-Side" value—taking existing content (URLs) and transforming it for the user using AI audio separation.
+
+Blueprint 1: "Stadium Mode" (The Atmosphere Filter)
+The Pitch: Watch any sports broadcast with the immersion of being in the stadium. Removes biased commentary and annoying play-by-play while preserving the roar of the crowd, the referee's whistle, and game sounds.
+
+1. The Architecture
+Input: URL (YouTube, Twitch, m3u8 stream).
+
+Preprocessing: yt-dlp extracts high-fidelity audio/video.
+
+AI Logic: Subtractive Separation. Instead of trying to "keep the crowd" (which is vague), we identify and subtract the "human voice/commentator."
+
+Output: Re-muxed video file with (Original Audio - Commentator Track).
+
+2. Technical Implementation Details
+Model: facebook/sam-audio-large (Recommended for better voice distinction).
+
+Prompt Strategy:
+
+Positive Prompts (What to identify): ["sports commentator", "play-by-play announcer", "human speech"]
+
+Negative Prompts (What to ignore): ["crowd cheering", "whistle", "ball impact", "sneaker squeak"]
+
+Processing Logic:
+
+SAM Audio returns the mask for the commentary.
+
+You perform a subtraction: Clean_Audio = Original_Waveform - Commentary_Mask.
+
+Note: Do not use a simple "mute" on the identified sections, or the crowd noise will drop out too. You must subtract the waveform to keep the background noise that exists underneath the voice.
+
+3. Code Snippet (Core Logic)
+
+# Assuming 'model' and 'processor' are loaded
+prompts = ["sports commentator", "announcer voice"]
+inputs = processor(audio=waveform, sampling_rate=sr, text_prompts=prompts)
+
+# Get the mask of the commentary
+with torch.no_grad():
+    outputs = model(inputs)
+    commentary_mask = outputs['masks'][0]
+
+# SUBTRACT the commentary to leave the stadium atmosphere
+stadium_atmosphere = original_waveform - commentary_mask
+
+# Normalize to prevent clipping
+stadium_atmosphere = stadium_atmosphere / torch.max(torch.abs(stadium_atmosphere))
+
+Blueprint 2: The "Taylor Swift" Filter (Visual-Audio Isolation)
+The Pitch: A "Focus Mode" for celebrity super-fans (or haters). It uses Visual Prompting to automatically detect a specific person in a video feed and either Isolate (hear only them) or Mute (hear everything except them).
+
+1. The Architecture
+Input: Video File or Stream.
+
+Preprocessing: Frame extraction (1 frame per second).
+
+Visual Detection: Use a lightweight object detector (like YOLOv8 or a Face Detector) to find the bounding box of the target person (e.g., Taylor Swift, a specific politician, a lead singer).
+
+AI Logic: Pass the bounding box coordinates to SAM Audio as a Visual Prompt.
+
+Output: Modified Audio Track synced to video.
+
+2. Technical Implementation Details
+Step A: Detect Target. Run YOLO on frame N. If class Person matches target (via face rec or user selection), get coordinates [x, y].
+
+Step B: Visual Prompting. Pass the frame image and the point [x, y] to SAM Audio.
+
+Prompt: input_points=[[[x, y]]]
+
+Step C: Action.
+
+"Fan Mode" (Isolate): Keep only the audio returned by SAM. (Hear what she is saying/singing over the noise).
+
+"Hater Mode" (Mute): Subtract the audio returned by SAM from the main mix.
+
+3. Why this is "Cool & Unexpected"
+Most audio AIs are blind. They don't know who is talking, just that someone is. By chaining a Vision Model (YOLO) -> Audio Model (SAM), you create a "Smart Mute" button that works on specific people, which is a massive demo-able "wow" factor.
+
+Blueprint 3: The "Universal Broadcaster" (AI Dubbing)
+The Pitch: Watch a US NBA game with Japanese commentary, or a Premier League game with Hindi commentary—generated in real-time. This is not just "voiceover"; it mixes the new language into the 3D stadium sound so it sounds authentic.
+
+1. The Architecture
+This is a 3-Stage Pipeline that builds on "Stadium Mode."
+
+Split: Use SAM Audio to separate Source_Commentary and Stadium_Background.
+
+Transform:
+
+Source_Commentary -> Whisper (Speech-to-Text) -> Translation API -> ElevenLabs/Meta Voicebox (Text-to-Speech in Target Language).
+
+Mix: Combine Stadium_Background + Target_Language_Commentary.
+
+2. Technical Implementation Details
+Step 1 (Separation): Use the "Stadium Mode" script to get clean_stadium.wav (background) and commentary_only.wav (foreground).
+
+Step 2 (Transcription):
+
+import whisper
+model = whisper.load_model("base")
+result = model.transcribe("commentary_only.wav")
+english_text = result["text"]
+
+Step 3 (Translation & Dubbing):
+
+Translate english_text to spanish_text.
+
+Generate spanish_audio.wav using a TTS provider.
+
+Step 4 (The "Authentic" Mix):
+
+Use Audio Ducking: When the TTS voice speaks, slightly lower the volume of clean_stadium.wav (by 10-20%) to make the commentary pop, then raise it back up when silent.
+
+Add Reverb: Apply a tiny bit of "Large Hall" reverb to the TTS voice so it sounds like it's coming from a stadium announcer's booth, not a dry studio.
+
+3. Viral Potential
+This solves a massive global problem. Sports rights are expensive, and local language feeds are rare. A tool that lets a user paste a link to an English stream and watch it in their native language—while keeping the excitement of the crowd—is a product, not just a demo.
